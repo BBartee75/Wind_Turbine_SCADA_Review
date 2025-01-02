@@ -1,0 +1,559 @@
+---
+title: "`r SiteName` SCADA Check"
+author: "Your Company Name"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  html_document: default
+params:
+  progress: "none"
+  csv.data: NA
+  wtgs: NA
+  WTG.Models: NA
+  SiteName: NA
+  Total.Num.WTgs: NA
+---
+
+<div style="position: absolute; top: 0; right: 0;">
+   <img src="ULimage.PNG" width="200px" align="right">
+</div>
+
+```{r setup, include=FALSE}
+library(data.table)
+library(lubridate)
+library(dplyr)
+library(plotly)
+library(ggplot2)
+library(openxlsx)
+library(knitr)
+library(kableExtra)
+library(cowplot)
+
+
+round_to_half <- function(x) {
+  return(round(x * 2) / 2)
+}
+
+csv.data <- csv.data
+csv.data$RealPower <- as.numeric(csv.data$RealPower)
+csv.data$WindSpeed <- as.numeric(csv.data$WindSpeed)
+csv.data$Rating <- as.numeric(csv.data$Rating)
+
+wtgs <- wtgs
+SiteName <- SiteName
+WTG.Models <- WTG.Models
+Total.Num.WTgs <- Total.Num.WTgs
+
+
+```
+
+## Summary of Wind Turbine Data
+This section is to quickly summarize the values:
+
+The goal is to automatically calculate the following summary statistics for the main data set provided.
+
+Data set was for **`r SiteName`** Wind Farm
+
+```{r Summary of Wind Turbine Data, echo=FALSE, message=FALSE, warning=FALSE, comment=NA}
+Total_WTGs <- NROW(unique(csv.data$WTG))
+Row_Count <- NROW(csv.data)
+DateStart <- min(csv.data$TimeStamp10Min)
+DateEnd <- max(csv.data$TimeStamp10Min)
+#---------------------------------------------------------------------------------------------------
+MissingData_count <- colSums(is.na(csv.data))
+BlankData_count <-  colSums(is.na(csv.data))
+combined_data <- cbind(MissingData_count, BlankData_count)
+#---------------------------------------------------------------------------------------------------
+#Create a table so that If there are more than one type of WTG power rating the different rating 
+# will be shown in different colors
+wtgTypeTable <- data.table(WTG = csv.data$WTG, Rating = csv.data$Rating)
+wtgTypeTable <- wtgTypeTable %>% group_by(WTG, Rating) %>%
+                summarize(
+                  WTG = unique(WTG),
+                  Rating = unique(Rating)
+                )
+# Create a frequency table
+freq_table <- table(wtgTypeTable$Rating)
+# Find the value that occurs the most
+most_frequent_value <- names(freq_table)[which.max(freq_table)]
+
+# Change the text color and fill color of the 'Rating' column
+wtgTypeTable$Rating <- cell_spec(wtgTypeTable$Rating, 
+                       color = ifelse(wtgTypeTable$Rating != most_frequent_value
+                                     , "#5B0428", "black"),
+                       background = ifelse(wtgTypeTable$Rating != most_frequent_value
+                                     , "#FF9D55", "#ffffff")
+                       )
+
+wtgTypeTable <- setnames(wtgTypeTable, "Rating", "Rating (k/w)")
+
+#---------------------------------------------------------------------------------------------------
+#look for total WTG and see if there are any missing or duplicated
+wtgTotals <- data.table(
+             DataSet_Total.Num.WTgs = Total.Num.WTgs,
+             DataSet_Total.WTGs.Data = Total_WTGs,
+             WTG.Count.diff = ifelse((Total.Num.WTgs - Total_WTGs) > 0 | (Total.Num.WTgs - Total_WTGs) < 0,
+                                     paste("Yes, missing", abs((Total.Num.WTgs - Total_WTGs)),"WTG(s)"),
+                                     paste("No missing WTGs")),
+             Duplicated.WTGs = ifelse(NROW(csv.data$WTG[duplicated(unique(csv.data$WTG))]) != 0,
+             "Yes", "No")
+)
+
+kbl(WTG.Models) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+
+kbl(wtgTotals) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+
+cat("CSV_Row_Count =", Row_Count, "\n")
+print(combined_data)
+
+cat("Below is a list of WTGs and their individual power rating. If there are more than one type of 
+    WTG power rating the different rating will be shown in different colors.")
+kbl(wtgTypeTable, escape = F) %>% 
+  kable_styling("striped", full_width = F, position = "left") %>% 
+  column_spec(1, bold = TRUE, border_right = TRUE, color = "black", background = "lightgrey") %>% 
+  scroll_box(width = "300px", height = "600px")
+```
+
+### RealPower and WindSpeed Summary:
+Summary values below are for RealPower and WindSpeed Values for the full data set with 
+all WTGs combined:
+
+-   Min: The minimum value
+-   1st Qu: The value of the 1st quartile (25th percentile)
+-   Median: The median value
+-   3rd Qu: The value of the 3rd quartile (75th percentile)
+-   Max: The maximum value
+
+```{r RealPower and WindSpeed Summary, echo=FALSE, message=FALSE, warning=FALSE, comment=NA}
+# Use R summary Function:' Summary values below are for RealPower and WindSpeed 
+if (any(is.na(csv.data))) {
+  csv.data[is.na(csv.data)] <- 0
+}else{csv.data <- csv.data}
+
+summary_output <- summary(csv.data)
+  summarydf <- data.frame(unclass(summary_output), check.names = FALSE, stringsAsFactors = FALSE)
+  summarydf <- summarydf[,c(3, 4)]
+
+
+kbl(summarydf) %>%
+  kable_styling(bootstrap_options = "striped", full_width = F, position = "left")
+```
+
+### Sample of CSV Dataset: 10 Rows
+```{r Sample of CSV Dataset, echo=FALSE, message=FALSE, warning=FALSE, comment=NA}
+head(csv.data, 10)
+```
+
+
+### RealPower / MaxPower Test for Each WTG
+
+**Test for Power Production**
+
+WTG's that **FAIL** a test below will be highlighted <span style="color: #CA0123;">**RED**</span> if one or both of these conditions are not achieved:
+
+- ReachRated_hrs: 
+  - If Max-RealPower did NOT exceed the Rated power for at least one 10min timestamp.
+  - WTG's that are highlighted <span style="color: #00948F ;">**Green**</span> have shown to pass.
+
+- 98% of Rated:
+  - Max power has at least achieved 98% of manufacturers Rated Power rating.
+  - WTG's that are highlighted <span style="color: #00948F ;">**Green**</span> have shown to pass.
+
+**Notification of possible issues**
+
+WTG's will be highlighted <span style="color: #FF9D55;">**Orange**</span> if these conditions are meet.
+This is still considered a <span style="color: #00948F ;">**PASS**</span>, but will be a Notification:
+
+- 3Days_Production_hrs: 
+  - WTG did NOT show total power production for 72 hours or more.
+  
+- LastDayProduction_hrs: 
+  - WTG did NOT produce power where WindSpeed > 3ms and RealPower > 250 kw on the last day of data sample 
+  
+  
+```{r RealPower / MaxPower Test for Each WTG, echo=FALSE, message=FALSE, warning=FALSE, comment=NA}
+MData <- data.frame()  # Initialize MData as an empty data frame
+
+for(i in 1:NROW(wtgs)){
+  wt2 <- wtgs[i]
+  mxdata <- subset(csv.data, WTG == wt2)
+  mxdata$ReachRated <- ifelse(mxdata$RealPower >= mxdata$Rating, 1, 0) 
+  mxdata$ProductionMeasured <- ifelse(mxdata$RealPower >= 250, 1, 0) 
+  mxdata$LastDayProduction <- ifelse(mxdata$TimeStamp10Min >= as_date(max(mxdata$TimeStamp10Min))-1 &
+                                    mxdata$WindSpeed > 3 &
+                                    mxdata$RealPower >= 250, 1, 0)
+  MData <- rbind(MData, mxdata)
+}
+
+#Pivot MData data frame to give a summary total of data
+
+MaxPower <- MData %>% 
+  group_by(WTG, Rating) %>%
+  mutate(
+    RealPower = as.numeric(RealPower),
+    ReachRated = as.numeric(ReachRated),
+    ProductionMeasured = as.numeric(ProductionMeasured),
+    LastDayProduction = as.numeric(LastDayProduction)
+  ) %>%
+  summarize(
+    MaxPower = max(RealPower),
+    `98% of Rated` = {
+      value <- round((max(RealPower) / Rating[1]), digits = 4)
+      if (value <= 0) {
+        value <- 0
+      }
+      value
+    },
+    `TotalProduction (k/w)` = round((sum(RealPower)*600)/3600, digits = 2),
+    ReachRated_hrs = round((sum(ReachRated)*600)/3600, digits = 2),
+    `3Days_Production_hrs` = round((sum(ProductionMeasured)*600)/3600, digits = 2),
+    LastDayProduction_hrs = round((sum(LastDayProduction)*600)/3600, digits = 2)
+  )
+
+#MaxPower <- data.table(MaxPower)
+
+# Special column font coloring based on if statements using df MaxPower to new df cs_dt
+cs_dt <- MaxPower
+# Remove NA values
+cs_dt <- na.omit(cs_dt)
+
+# Format WTG column
+cs_dt$WTG = cell_spec(cs_dt$WTG, 
+                       color = ifelse(cs_dt$MaxPower > round(cs_dt$Rating, digits = -2),
+                                       "#00948F",
+                                       ifelse(cs_dt$`98% of Rated` >= 0.98,
+                                              "#00948F",
+                                              "#CA0123"))
+)
+
+cs_dt$MaxPower = cell_spec(
+                  round(cs_dt$MaxPower, digits = 2),
+                  color = ifelse(round(cs_dt$MaxPower, digits = 2) > round(cs_dt$Rating, digits = -2),
+                                 "#00948F",
+                                 "#CA0123")
+                )
+
+
+# # Format `98% of Rated` column
+# # Convert values to percentages
+cs_dt$`98% of Rated` <- paste0(as.numeric(cs_dt$`98% of Rated`) * 100, "%")
+cs_dt$`98% of Rated` <- cell_spec(
+  cs_dt$`98% of Rated`,
+  color = ifelse(as.numeric(sub("%", "", cs_dt$`98% of Rated`)) > 98, "#00948F", "#CA0123")
+)
+
+# # Format ReachRated_hrs column
+cs_dt$ReachRated_hrs = cell_spec(cs_dt$ReachRated_hrs,
+                                 color = ifelse(cs_dt$MaxPower < ifelse((cs_dt$Rating %% 1000) <= cs_dt$MaxPower,
+                                                                     round(cs_dt$Rating, digits = -2), cs_dt$Rating),
+                                                "#00948F", "#CA0123"))
+
+# # Format `3Days_Production_hrs` column
+cs_dt$`3Days_Production_hrs` = cell_spec(cs_dt$`3Days_Production_hrs`,
+                                         color = ifelse(cs_dt$`3Days_Production_hrs` > 72, "black", "#FF9D55"))
+
+# # Format LastDayProduction_hrs column
+cs_dt$LastDayProduction_hrs = cell_spec(cs_dt$LastDayProduction_hrs,
+                                        color = ifelse(cs_dt$LastDayProduction_hrs > 0, "black", "#FF9D55"))
+
+# Rename columns
+cs_dt <- setnames(cs_dt, "Rating", "Rating (k/w)")
+cs_dt <- setnames(cs_dt, "MaxPower", "MaxPower (k/w)")
+
+# Print DateStart and DateEnd
+cat(paste("DateStart =", format(as.POSIXct(DateStart), "%Y-%m-%d %H:%M"), 
+          "/ DateEnd =", format(as.POSIXct(DateEnd), "%Y-%m-%d %H:%M")), "\n")
+
+# Print the data table in a styled format
+kbl(cs_dt, escape = F) %>%
+  kable_paper("striped", full_width = T) %>%
+  column_spec(1, bold = TRUE, border_right = TRUE, color = "black", background = "lightgrey") %>% 
+  scroll_box(width = "800px", height = "600px")
+```
+
+
+### WTGs With Not Enough Data to Process
+Find all WTGS that will not have enough or correct data to process Power Values.
+
+- RealPower data will NOT plot with Zero or Negative Power Values
+- Filter out WTGS that had less then 5 rows of data where RealPower > 0
+- WTG did NOT reach rated power
+
+```{r WTGs With Not Enough Data to Process, echo=FALSE, message=FALSE, warning=FALSE, comment=NA}
+#Find all WTGS that have all Zero or Negative with no positive values in 
+# RealPower Data that will not plot 
+#Check to see if each WTG has enough rows of data
+# filter out WTGS with no data and less then 5 rows of data
+wtgs_no_data <- data.frame()
+wtgNotReachRated <- data.frame()
+for (i in 1:NROW(wtgs)) {
+  #i=18
+  wt <- wtgs[i]
+  csvPower.NoData <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)
+  if (NROW(csvPower.NoData) == 0 | NROW(csvPower.NoData) < 5){
+    print(paste("WTG -", wt, "- WTG does NOT have enough data to evaluate properly and accurately."))
+    wtgs_no_data <- rbind(wtgs_no_data, data.frame(WTG = wt))
+    next
+  }
+  
+   #looking to make sure the WTG produced power greater than Rating
+  csvPower.BelowRated <- subset(csv.data, 
+                                csv.data$WTG == wt & 
+                                csv.data$RealPower > round(csv.data$Rating, digits = -2)
+                                )
+  if (NROW(csvPower.BelowRated) == 0){
+    print(paste("WTG -", wt, "- WTG did NOT reach rated power."))
+    wtgNotReachRated <- rbind(wtgNotReachRated, data.frame(WTG = wt))
+    next
+  }
+}
+#remove WTGs that will have zero data
+wtgs <- wtgs[!wtgs %in% wtgs_no_data$WTG & !wtgs %in% wtgNotReachRated$WTG]
+```
+
+
+## Power Plots for `r SiteName` WTGs: 
+##### 1. Did NOT Reach Rated Power; 2. Reach Rated Power
+
+
+### 1. DID NOT Reached Rated Power 
+
+```{r Did NOT Reach Rated Power, echo=FALSE, message=FALSE, warning=FALSE, comment=NA, out.height="150%", out.width="150%"}
+
+if(NROW(wtgNotReachRated) > 0){
+  
+powercurves <- list()
+
+for (i in 1:NROW(wtgNotReachRated)) {
+  # Extract the current WTG
+  #i=1
+  wt <- wtgNotReachRated[i,]
+  csvPower <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)  
+  #Powercureve Plot
+  powercurve <- csvPower %>%
+    ggplot(aes(x = WindSpeed, y = RealPower)) +
+    geom_point(color = "#00689C", size = .5) +
+    geom_line(aes(x = WindSpeed, 
+                  y = rep(unique(Rating), length(WindSpeed)), 
+                  color = paste("Rated Power \n", unique(Rating), "(kW)")),
+              size = .65, 
+              linetype = "dotdash") +
+    scale_color_manual(values = "#CA0123") +
+    labs(x = "Windspeed", y = "RealPower", title = paste0("WTG-", wt, " Power Curve"), color = "") +
+    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
+                       breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
+    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
+                       breaks = seq(0, max(csvPower$RealPower) + 250, by = 200)) +
+    theme_half_open() +
+    background_grid() +
+    guides(color = guide_legend(override.aes = list(size = 8)))
+  
+    powercurve <- powercurve + 
+                  theme(axis.text.x = element_text(size = 6),
+                        axis.text.y = element_text(size = 6),
+                        axis.title.x = element_text(size = 8),
+                        axis.title.y = element_text(size = 8),
+                        legend.text = element_text(size = 8),
+                        plot.title = element_text(size = 10)  # Change the title size here
+                        )
+        
+
+  #powercurve
+  #-------------------------------------------------------------------------------------------------
+  # get max realpowers per day
+  days <- unique(as_date(csvPower$TimeStamp10Min))
+  mxpower <- csvPower
+  mxpower$TimeStamp10Min <- as_date(mxpower$TimeStamp10Min)
+  # Create a Power bar chart
+  bardata <- mxpower %>% 
+    group_by(TimeStamp10Min) %>%
+    summarize(
+      RealPower = round(max(RealPower), digits = 2),
+      WindSpeed = round(mean(WindSpeed), digits = 2)
+    )
+  # Create the ggplot object with title
+  p <- ggplot(bardata) +
+    geom_bar(aes(x = TimeStamp10Min,
+                 y = RealPower, fill = "MaxRealPower"),
+             stat = "identity") +
+    geom_line(aes(x = TimeStamp10Min,
+                  y = WindSpeed * 100,
+                  color = "AvgWindSpeed"),
+              stat = "identity") +
+    geom_text(
+      aes(
+        label = round(WindSpeed, digits = 2),
+        x = TimeStamp10Min,
+        y = WindSpeed * 100
+      ),
+      colour = "#00689C",
+      size = 3,
+      vjust = 1
+    ) +
+    geom_text(
+      aes(
+        label = RealPower,
+        x = TimeStamp10Min,
+        y = 0.95 * RealPower
+      ),
+      colour = "black",
+      size = 2.5,
+      angle = 90
+    ) +
+    geom_hline(yintercept = unique(csvPower$Rating), color = 'red', size = .35, linetype = "dotdash") +
+    scale_y_continuous(
+      sec.axis = sec_axis( ~ (1 - .) * max(bardata$WindSpeed), name = "AvgWindSpeed"),
+      breaks = seq(0, max(bardata$RealPower), by = 500)
+    ) +
+    scale_fill_manual(values = c("MaxRealPower" = "#FF9D55"),
+                      name = "") +
+    scale_color_manual(values = c("AvgWindSpeed" = "#00689C"), name = "") +
+    labs(fill = "Variables", color = "Variables") +
+    theme(axis.text.y.right = element_blank()) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + # Rotate x-axis labels 
+    scale_x_continuous(breaks = bardata$TimeStamp10Min) +
+    scale_y_continuous(breaks = seq(0, max(csvPower$RealPower) + 200, by = 200))+
+    theme(axis.text.x = element_text(size = 6),
+                   axis.text.y = element_text(size = 6),
+                   axis.title.x = element_text(size = 8),
+                   axis.title.y = element_text(size = 8),
+                   legend.text = element_text(size = 8))
+        
+  #p
+  # Convert the ggplot object to a plotly object
+  #comboplot <- subplot(powercurve, p, nrows = 2)
+  
+  comboplot <- gridExtra::grid.arrange(powercurve, p, ncol = 1)
+  
+  # Add the power curve plot to the list
+  powercurves[[wt]] <- comboplot
+}
+
+# Return the list of power curve plots
+invisible(powercurves)
+
+}else{cat("If no charts either: There was not enough data to produce a chart, or all WTGs produced power above thier ratings.")}
+```
+
+### 2. Reached Rated Power Plots
+
+```{r Reached Rated Power Plots, echo=FALSE, message=FALSE, warning=FALSE, comment=NA, out.height="150%", out.width="150%"}
+
+# Create a scatter plot
+# filter for each WTG
+
+# Find each WTG and loop for each WTG to create a power curve chart. 
+# We filter for all real power that is > 0
+# Initialize an empty list to store the power curve plots
+powercurves <- list()
+
+for (i in 1:NROW(wtgs)) {
+  # Extract the current WTG
+  #i=1
+  wt <- wtgs[i]
+  csvPower <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)  
+  powercurve <-
+  csvPower %>%
+    ggplot(aes(x = WindSpeed, y = RealPower)) +
+    geom_point(color = "#00689C", size = .5) +
+    geom_line(aes(x = WindSpeed, 
+                  y = rep(unique(Rating), length(WindSpeed)), 
+                  color = paste("Rated Power \n", unique(Rating), "(kW)")),
+              size = .65, 
+              linetype = "dotdash") +
+    scale_color_manual(values = "#CA0123") +
+     labs(x = "Windspeed", y = "RealPower", title = paste0("WTG-", wt, " Power Curve"), color = "") +
+    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
+                       breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
+    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
+                       breaks = seq(0, max(csvPower$RealPower) + 200, by = 200)) +
+    theme_half_open() +
+    background_grid() 
+
+  powercurve <- powercurve + 
+                theme(axis.text.x = element_text(size = 6),
+                      axis.text.y = element_text(size = 6),
+                      axis.title.x = element_text(size = 8),
+                      axis.title.y = element_text(size = 8),
+                      legend.text = element_text(size = 8),
+                      plot.title = element_text(size = 10)  # Change the title size here
+                      ) 
+  
+  #powercurve
+  #-------------------------------------------------------------------------------------------------
+  # get max realpowers per day
+  days <- unique(as_date(csvPower$TimeStamp10Min))
+  mxpower <- csvPower
+  mxpower$TimeStamp10Min <- as_date(mxpower$TimeStamp10Min)
+  # Create a Power bar chart
+  bardata <- mxpower %>% 
+    group_by(TimeStamp10Min) %>%
+    summarize(
+      RealPower = round(max(RealPower), digits = 2),
+      WindSpeed = round(mean(WindSpeed), digits = 2)
+    )
+  # Create the ggplot object with title
+  p <- ggplot(bardata) +
+    geom_bar(aes(x = TimeStamp10Min,
+                 y = RealPower, fill = "MaxRealPower"),
+             stat = "identity") +
+    geom_line(aes(x = TimeStamp10Min,
+                  y = WindSpeed * 100,
+                  color = "AvgWindSpeed"),
+              stat = "identity") +
+    geom_text(
+      aes(
+        label = round(WindSpeed, digits = 2),
+        x = TimeStamp10Min,
+        y = WindSpeed * 100
+      ),
+      colour = "#00689C",
+      size = 3,
+      vjust = 1
+    ) +
+    geom_text(
+      aes(
+        label = RealPower,
+        x = TimeStamp10Min,
+        y = 0.95 * RealPower
+      ),
+      colour = "black",
+      size = 2.5,
+      angle = 90
+    ) +
+    geom_hline(yintercept = unique(csvPower$Rating), color = 'red', size = .35, linetype = "dotdash") +
+    scale_y_continuous(
+      sec.axis = sec_axis( ~ (1 - .) * max(bardata$WindSpeed), name = "AvgWindSpeed"),
+      breaks = seq(0, max(bardata$RealPower), by = 500)
+    ) +
+    scale_fill_manual(values = c("MaxRealPower" = "#FF9D55"),
+                      name = "") +
+    scale_color_manual(values = c("AvgWindSpeed" = "#00689C"), name = "") +
+    labs(fill = "Variables", color = "Variables") +
+    theme(axis.text.y.right = element_blank()) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) + # Rotate x-axis labels 
+    scale_x_continuous(breaks = bardata$TimeStamp10Min) +
+    scale_y_continuous(breaks = seq(0, max(csvPower$RealPower) + 200, by = 200))+
+    theme(axis.text.x = element_text(size = 6),
+                   axis.text.y = element_text(size = 6),
+                   axis.title.x = element_text(size = 8),
+                   axis.title.y = element_text(size = 8),
+                   legend.text = element_text(size = 8))
+   
+  #p
+  # Convert the ggplot object to a plotly object
+  #comboplot <- subplot(powercurve, p, nrows = 2)
+  
+  comboplot <- gridExtra::grid.arrange(powercurve, p, ncol = 1)
+  
+  # Add the power curve plot to the list
+  powercurves[[wt]] <- comboplot
+}
+
+# Return the list of power curve plots
+invisible(powercurves)
+```
+
+
+
