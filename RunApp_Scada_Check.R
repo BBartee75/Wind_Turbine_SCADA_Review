@@ -20,4 +20,5 @@
 # 1
 setwd(getwd())
 # 2 - A R-Shiny app will open in your default web browser.
+#colnames c("WTG", "TimeStamp10Min", "RealPower", "WindSpeed")
 runApp("./Scada_Check_ShinyApp.R")

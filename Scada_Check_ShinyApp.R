@@ -29,11 +29,11 @@ ui <- fluidPage(
     });
  ")),
   # Title and image at the top
- fluidRow(
-   column(8, tags$h1("SCADA Check Dashboard", style = "font-weight: bold;"), 
-          tags$i(HTML("<p>&copy; Your Company Name</p>"))),
-   column(4, div(style = "text-align: right;", img(src = "ULimage.PNG", height = "100px")))
- ),
+  fluidRow(
+    column(8, tags$h1("SCADA Check Dashboard", style = "font-weight: bold;"), 
+           tags$i(HTML("<p>&copy; UL Renewables Asset Advisory, USA</p>"))),
+    column(4, div(style = "text-align: right;", img(src = "ULimage.PNG", height = "100px")))
+  ),
  
  # Rest of the UI elements
  #-------------------------------------------------------------------------------------------------
@@ -185,11 +185,13 @@ ui <- fluidPage(
   )),
  uiOutput("SCADA_Check"),
  downloadButton("downloadSCADAReport", "Download SCADA Report"),
- HTML("<br><br>")
- 
+ HTML("<br><br>"),
  
  #--------------
- #End of UI
+ actionButton("close_app", "Close Application"),
+ textOutput("status")
+ 
+  #End of UI
 )
 
 
@@ -222,10 +224,10 @@ server <- shinyServer(function(input, output, session) {
   )
   observeEvent(input$addRow, {
     newEntry <- data.frame(
-      `Site Name` = input$siteName,
-      `WTG Count` = input$wtgCount,
-      Manufacturer = input$manufacturer,
-      `WTG Rating` = input$WTGRating
+      `Site Name` = trimws(input$siteName),
+      `WTG Count` = trimws(input$wtgCount),
+      Manufacturer = trimws(input$manufacturer),
+      `WTG Rating` = trimws(input$WTGRating)
     )
     SiteData$data <- rbind(isolate(SiteData$data), newEntry)
     updateTextInput(session, "siteName", value = "")
@@ -263,15 +265,47 @@ server <- shinyServer(function(input, output, session) {
   ))
   
   #------------------------------------------------------------------------------------------------- 
-  #External Data Upload Section
+  #External Data Upload Section******************************************
   observeEvent(input$fileUpload, {
+    
     if (!is.null(input$fileUpload)) {
-      df <- read.csv(input$fileUpload$datapath)
-      updateSelectInput(session, "addWTG", choices = unique(df$WTG))
-      output$fileInfo <- renderPrint({
-        paste("File uploaded from: ", input$fileUpload$datapath)
+      # Get file extension
+      file_ext <- tolower(tools::file_ext(input$fileUpload$datapath))
+      
+      tryCatch({
+        # Read file based on extension
+        df <- if (file_ext == "csv") {
+          read.csv(input$fileUpload$datapath)
+        } else if (file_ext %in% c("xls", "xlsx")) {
+          readxl::read_excel(input$fileUpload$datapath)
+        } else {
+          # Instead of stopping, show warning message
+          output$fileInfo <- renderText({
+            paste("Please upload a CSV or Excel file. Current file type:", file_ext)
+          })
+          return(NULL)  # Exit the current if block
+        }
+        
+        # If file read successfully, proceed with processing
+        colnames(df) <- trimws(colnames(df), which = "right") #trim any whitespaces
+        
+        
+        
+        
+        updateSelectInput(session, "addWTG", choices = unique(df$WTG))
+        output$fileInfo <- renderText({
+          paste("File successfully uploaded from:", input$fileUpload$datapath, "\n",
+                "Total WTG count is:", length(unique(df$WTG)), "\n")
+        })
+      }, error = function(e) {
+        # Handle any errors during file reading
+        output$fileInfo <- renderText({
+          paste("Error reading file. Please check if file is corrupted or try again.", 
+                "Error details:", e$message)
+        })
       })
     }
+    
   })
   
   observe({
@@ -309,20 +343,20 @@ server <- shinyServer(function(input, output, session) {
   
   #------------------------------------------------------------------------------------------------- 
   #test to make sure file upload is formatted correctly
-  observeEvent(input$run, {
-    showModal(modalDialog(
-      title = "Uploaded Scada file Format Confirmation",
-      HTML("Have you formatted the .xls, .xlsx, or .csv file correctly? <br>
-         WTG = Use customer naming, <br>
-         TimeStamp10Min = Follow mm/dd/yyyy hh:mm excel format (12/2/2023 9:50) <br>
-         RealPower = Enter in kW With two decimals places (418.98), <br>
-         WindSpeed = With two decimals places (11.66)"),
-      footer = tagList(
-        modalButton("No"),
-        actionButton("yes", "Yes")
-      )
-    ))
-  })
+  # observeEvent(input$run, {
+  #   showModal(modalDialog(
+  #     title = "Uploaded Scada file Format Confirmation",
+  #     HTML("Have you formatted the .xls, .xlsx, or .csv file correctly? <br>
+  #        WTG = Use customer naming, <br>
+  #        TimeStamp10Min = Follow mm/dd/yyyy hh:mm excel format (12/2/2023 9:50) <br>
+  #        RealPower = Enter in kW With two decimals places (418.98), <br>
+  #        WindSpeed = With two decimals places (11.66)"),
+  #     footer = tagList(
+  #       modalButton("No"),
+  #       actionButton("yes", "Yes")
+  #     )
+  #   ))
+  # })
   
   #------------------------------------------------------------------------------------------------- 
   #download of sample data
@@ -352,6 +386,7 @@ server <- shinyServer(function(input, output, session) {
   # First observeEvent to process data
   observeEvent(input$rmd, {
     withProgress(message = 'Processing data...', value = 0, {
+      Sys.sleep(1)  # Wait 1 second
       # Initial validation
       if (is.null(SiteData$data) || is.null(input$fileUpload)) {
         shinyalert::shinyalert(
@@ -369,6 +404,8 @@ server <- shinyServer(function(input, output, session) {
       
       tryCatch({
         setProgress(0.2, detail = "Reading data file...")
+        Sys.sleep(1)  
+        
         # Read and process data file
         csv.data <- if(tools::file_ext(input$fileUpload$name) == "csv") {
           read.csv(input$fileUpload$datapath)
@@ -377,6 +414,8 @@ server <- shinyServer(function(input, output, session) {
         }
         
         setProgress(0.4, detail = "Converting data types...")
+        Sys.sleep(1) 
+        
         # Convert data types
         csv.data$TimeStamp10Min <- anytime::anytime(csv.data$TimeStamp10Min)
         csv.data$WindSpeed <- as.numeric(csv.data$WindSpeed)
@@ -386,6 +425,8 @@ server <- shinyServer(function(input, output, session) {
         csv.data$Rating <- as.numeric(max_rating)
         
         setProgress(0.6, detail = "Processing ratings...")
+        Sys.sleep(1) 
+        
         # Process additional ratings if they exist
         AddRating <- selectedData()
         
@@ -405,6 +446,8 @@ server <- shinyServer(function(input, output, session) {
         }
         
         setProgress(0.8, detail = "Validating data...")
+        Sys.sleep(1) 
+        
         # Validate WTG counts
         wtgs <- unique(csv.data$WTG)
         if (sum(as.numeric(SiteData$data$WTG.Count)) != length(wtgs)) {
@@ -417,6 +460,8 @@ server <- shinyServer(function(input, output, session) {
         }
         
         setProgress(0.9, detail = "Storing processed data...")
+        Sys.sleep(1) 
+        
         # Store all processed data in reactiveValues
         processedData$csv.data <- csv.data
         processedData$SiteName <- unique(SiteData$data$Site.Name)
@@ -428,6 +473,7 @@ server <- shinyServer(function(input, output, session) {
         processedData$ready <- TRUE
         
         setProgress(1, detail = "Data processing complete")
+        Sys.sleep(1) 
         
       }, error = function(e) {
         shinyalert::shinyalert(
@@ -449,7 +495,10 @@ server <- shinyServer(function(input, output, session) {
           shinyjs::runjs("shinyjs.showProgress()")#--------------------------------------------------------------------------------------
           
           # Update the progress value to 50% after data processing
+          setProgress(0.5, detail = "Data processing.....")
+          Sys.sleep(1)    # Wait 1 second
           setProgress(0.75, detail = "Data processing.....")
+          Sys.sleep(.1)    # Wait 1 second
           
           csv.data = processedData$csv.data
           wtgs = processedData$wtgs
@@ -457,31 +506,90 @@ server <- shinyServer(function(input, output, session) {
           SiteName = processedData$SiteName
           Total.Num.WTgs = processedData$Total.Num.WTgs
           
+          # Create output directory
+          output_dir <- file.path(getwd(), "Report_Output", paste0(Sys.Date(), "_", SiteName))
+          if (!dir.exists(output_dir)) {
+            dir.create(output_dir, recursive = TRUE)
+          }
           
+          # Define filenames
+          output_file <- paste0(Sys.Date(), "_", SiteName, "_SCADACheck.html")
+          html_path <- file.path("www", output_file)
+          zip_file <- file.path(output_dir, paste0(Sys.Date(), "_", SiteName, "_SCADACheck.zip"))
+          
+          # Render RMarkdown report
           rmarkdown::render("SCADACheck.Rmd", 
                             output_format = "html_document",
-                            output_dir = "Report_Output",
-                            output_file = paste0(Sys.Date(), "_", SiteName,"_SCADACheck.html"),
+                            output_dir = "www",
+                            output_file = output_file,
                             output_options = list(
                             html_dependency = htmltools::htmlDependency(
-                                "shiny", "1.7.1", "/usr/local/lib/R/site-library/shiny/Report_Output/shared/shiny.js")
+                                "shiny", "1.7.1", "/usr/local/lib/R/site-library/shiny/www/shared/shiny.js")
                             )
           )
           
-          # Update the progress value to 100% when rendering is complete
-          setProgress(1, detail = "Rendering complete")
-          shinyjs::hide("html_output_progress")  # Hide the progress bar after rendering is complete
+          # Verify HTML was created successfully
+          if (!file.exists(html_path)) {
+            stop("HTML file not found after rendering:", html_path)
+          }
+          
+          # Copy HTML to output directory
+          file.copy(
+            from = html_path,
+            to = file.path(output_dir, output_file),
+            overwrite = TRUE
+          )
+          
+          setProgress(0.0, detail = "Preparing to create zip file...")
+          Sys.sleep(1) 
+          setProgress(0.5, detail = "Creating zip file...")
+          Sys.sleep(1)  
+          setProgress(0.75, detail = "Zipping files...")
+          Sys.sleep(1) 
+          
+          # Create zip file - simplified zip call
+          zip(zipfile = zip_file, 
+              files = file.path(output_dir, output_file)
+              )
+          
+          # Cleanup www folder files
+          on.exit({
+            # Get list of HTML files to delete
+            html_files <- dir("www", pattern = "\\.html$", full.names = TRUE)
+            # Delete each HTML file
+            lapply(html_files, function(x) {
+              tryCatch({
+                unlink(x)
+                message(paste("Deleted HTML file:", x))
+              }, error = function(e) {
+                message(paste("Warning: Could not delete HTML file:", x))
+              })
+            })
+            message("Cleanup completed: HTML files removed from www folder")
+          })
           
           # Add the resource path for the rendered HTML file
-          shiny::addResourcePath("report", "Report_Output")
+          shiny::addResourcePath("report", output_dir)
+            
+          # Update the progress value to 100% when rendering is complete
+          setProgress(1, detail = "Rendering complete")
+          Sys.sleep(1) 
+          shinyjs::hide("html_output_progress")  # Hide the progress bar after rendering is complete
           
           # Include the rendered HTML using tags$iframe()
-          tags$iframe(style="width:100%; height:1000px", src = paste0("report/", Sys.Date(),"_",SiteName, "_SCADACheck.html"))
+          tags$iframe(
+            src = paste0("report/", output_file),
+            style = "border:none; width:100%; height:1000px;"
+          )
+        
         })
       })
     }
   })
   #-------------------------------------------------------------------------------------------------
+  # Download Report
+  # paste0("Report_Output/", Sys.Date(),"_", isolate(SiteName()), "/", Sys.Date(), "_", isolate(SiteName()), "_SCADACheck.html")
+  
   # Download Report
   SiteName <- reactive({
     unique(SiteData$data$Site.Name)
@@ -492,12 +600,35 @@ server <- shinyServer(function(input, output, session) {
       paste0(Sys.Date(), "_", isolate(SiteName()), "_SCADACheck.html")
     },
     content = function(file) {
-      file.copy(paste0("Report_Output/", Sys.Date(),"_", isolate(SiteName()), "_SCADACheck.html"), file)  # Copy the file to the download location
+      file.copy(paste0("Report_Output/", Sys.Date(),"_", isolate(SiteName()), "/", Sys.Date(), 
+                       "_", isolate(SiteName()), "_SCADACheck.html"), 
+                file)  # Copy the file to the download location
     }
   )
   
   #------------------------------------------------------------------------------------------------
+  # Track whether we're shutting down
+  rv <- reactiveValues(closing = FALSE)
   
+  # Observe the close button
+  observeEvent(input$close_app, {
+    if (!rv$closing) {
+      # Set closing flag
+      rv$closing <- TRUE
+      
+      # Update status
+      output$status <- renderText({
+        "Closing application..."
+      })
+      
+      # Close browser window
+      js <- "window.close();"
+      tags$script(js)
+      
+      # Stop the application
+      stopApp()
+    }
+  })
   
   
   #--------------

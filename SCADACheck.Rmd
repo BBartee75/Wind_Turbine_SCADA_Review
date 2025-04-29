@@ -1,16 +1,16 @@
 ---
 title: "`r SiteName` SCADA Check"
-author: "Your Company Name"
+author: "<p>&copy; UL Renewables Asset Advisory, USA</p>"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
   html_document: default
 params:
   progress: "none"
-  csv.data: NA
-  wtgs: NA
-  WTG.Models: NA
-  SiteName: NA
-  Total.Num.WTgs: NA
+  csv.data: ~
+  wtgs: ~
+  WTG.Models: ~
+  SiteName: ~
+  Total.Num.WTgs: ~
 ---
 
 <div style="position: absolute; top: 0; right: 0;">
@@ -314,10 +314,10 @@ wtgs <- wtgs[!wtgs %in% wtgs_no_data$WTG & !wtgs %in% wtgNotReachRated$WTG]
 
 
 ## Power Plots for `r SiteName` WTGs: 
-##### 1. Did NOT Reach Rated Power; 2. Reach Rated Power
+##### 1. Did NOT attain Rated Power/Capacity ; 2. WTG's attained Rated Power/Capacity
 
 
-### 1. DID NOT Reached Rated Power 
+### 1. WTG's that DID NOT attain Rated Power/Capacity
 
 ```{r Did NOT Reach Rated Power, echo=FALSE, message=FALSE, warning=FALSE, comment=NA, out.height="150%", out.width="150%"}
 
@@ -340,7 +340,10 @@ for (i in 1:NROW(wtgNotReachRated)) {
               size = .65, 
               linetype = "dotdash") +
     scale_color_manual(values = "#CA0123") +
-    labs(x = "Windspeed", y = "RealPower", title = paste0("WTG-", wt, " Power Curve"), color = "") +
+    labs(x = "Windspeed", 
+         y = "RealPower", 
+         title = paste0("WTG-", wt, " Power Curve DID NOT attain Rated Power/Capacity"), 
+         color = "") +
     scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
                        breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
     scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
@@ -436,7 +439,7 @@ invisible(powercurves)
 }else{cat("If no charts either: There was not enough data to produce a chart, or all WTGs produced power above thier ratings.")}
 ```
 
-### 2. Reached Rated Power Plots
+### 2. WTG's attained Rated Power/Capacity
 
 ```{r Reached Rated Power Plots, echo=FALSE, message=FALSE, warning=FALSE, comment=NA, out.height="150%", out.width="150%"}
 
@@ -463,7 +466,10 @@ for (i in 1:NROW(wtgs)) {
               size = .65, 
               linetype = "dotdash") +
     scale_color_manual(values = "#CA0123") +
-     labs(x = "Windspeed", y = "RealPower", title = paste0("WTG-", wt, " Power Curve"), color = "") +
+     labs(x = "Windspeed", 
+          y = "RealPower", 
+          title = paste0("WTG-", wt, " Power Curve attained Rated Power/Capacity"), 
+          color = "") +
     scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
                        breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
     scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
