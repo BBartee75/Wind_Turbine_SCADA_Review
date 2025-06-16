@@ -455,7 +455,10 @@ for (i in 1:NROW(wtgs)) {
   # Extract the current WTG
   #i=1
   wt <- wtgs[i]
-  csvPower <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)  
+  csvPower <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)
+  if (nrow(csvPower) == 0) {
+    next  # Skip to the next iteration if csvPower has 0 rows
+  }
   powercurve <-
   csvPower %>%
     ggplot(aes(x = WindSpeed, y = RealPower)) +
