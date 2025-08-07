@@ -31,7 +31,7 @@ ui <- fluidPage(
   # Title and image at the top
   fluidRow(
     column(8, tags$h1("SCADA Check Dashboard", style = "font-weight: bold;"), 
-           tags$i(HTML("<p>&copy; UL Renewables Asset Advisory, USA</p>"))),
+           tags$i(HTML("<p>&copy; YOUR COMPANY NAME HERE</p>"))),
     column(4, div(style = "text-align: right;", img(src = "ULimage.PNG", height = "100px")))
   ),
  
