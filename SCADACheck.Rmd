@@ -1,6 +1,6 @@
 ---
 title: "`r SiteName` SCADA Check"
-author: "<p>&copy; UL Renewables Asset Advisory, USA</p>"
+author: "<p>&copy; YOUR COMPANY NAME HERE</p>"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
   html_document: default
