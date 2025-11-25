@@ -552,7 +552,7 @@ server <- shinyServer(function(input, output, session) {
               files = file.path(output_dir, output_file)
               )
           
-          # Cleanup www folder files
+          # # Cleanup www folder files
           on.exit({
             # Get list of HTML files to delete
             html_files <- dir("www", pattern = "\\.html$", full.names = TRUE)
@@ -607,14 +607,23 @@ server <- shinyServer(function(input, output, session) {
   )
   
   #------------------------------------------------------------------------------------------------
-  # Track whether we're shutting down
-  rv <- reactiveValues(closing = FALSE)
+  # Track whether we're shutting down (use regular variable, not reactive)
+  closing <- FALSE
+  
+  # Detect when browser disconnects (closed tab/window)
+  session$onSessionEnded(function() {
+    if (!closing) {
+      closing <<- TRUE  # Use <<- to modify parent scope
+      message("Browser closed, stopping app...")
+      stopApp()
+    }
+  })
   
   # Observe the close button
   observeEvent(input$close_app, {
-    if (!rv$closing) {
+    if (!closing) {
       # Set closing flag
-      rv$closing <- TRUE
+      closing <<- TRUE  # Use <<- to modify parent scope
       
       # Update status
       output$status <- renderText({
@@ -622,10 +631,10 @@ server <- shinyServer(function(input, output, session) {
       })
       
       # Close browser window
-      js <- "window.close();"
-      tags$script(js)
+      runjs("window.close();")
       
-      # Stop the application
+      # Stop the application after a brief delay to allow UI update
+      Sys.sleep(0.5)
       stopApp()
     }
   })

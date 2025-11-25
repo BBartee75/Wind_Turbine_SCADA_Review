@@ -1,5 +1,7 @@
 library(data.table)
 library(dplyr)
+source("C:\\Users\\102957\\Documents\\R-Scripts\\Bently Codes\\BBar_Wind Energy Functions.R")
+source("C:\\Users\\102957\\Documents\\R-Scripts\\Bently Codes\\My Functions_BBartee.R")
 
 "C:\\Users\\102957\\Documents\\R-Scripts\\Seiling II SCADA Data.xlsx"
 
@@ -41,6 +43,20 @@ read.All_CSVs <- function(filePath) {
   return(csv.data)
 }
 
+files <- find_All_Excel_files("./Downloaded_Data")
+files <- sub("^[^/]*/[^/]*/", "", files)
+
+NextData <- c()
+for(Nfile in 1:NROW(files)){
+  data <- files[Nfile]
+  nextfile <- read_NextEraScada_xlsx(file.loc = "./Downloaded_Data/",
+                                     xlsxName = data,
+                                     rating = 1900)
+  NextData <- rbind(NextData, nextfile)
+}
+csv.data <- NextData
+
+
 
 csv.data <- data.frame(read.All_CSVs(filePath = "C:\\Users\\102957\\Documents\\R-Scripts"))
 
@@ -53,4 +69,4 @@ csv.data <- setnames(csv.data, c(names(csv.data)[1],
                      c("TimeStamp10Min", "WTG", "RealPower", "WindSpeed")
 )
 
-write.csv(csv.data, "C:\\Users\\102957\\Documents\\R-Scripts\\Cedar Springs Scada.csv")
+write.csv(csv.data, "./Downloaded_Data/MammothPlains.csv")

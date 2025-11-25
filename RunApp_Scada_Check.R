@@ -16,6 +16,22 @@
 #' #################################################################################################
 
 
+# 
+# #---------------------------------------------------------------------------------------------------
+# # Gather data
+prompts <- list(
+  DataZip = "Is your data in a zip (.zip) file. y/n  -->  "
+)
+# Collect user inputs
+user_inputs <- lapply(prompts, readline)
+
+if(user_inputs$DataZip == "y"){
+  source("./ZipFiles_Read_&_Combine.R")
+} else {
+  source("ReadCSV.R")
+}
+
+#---------------------------------------------------------------------------------------------------
 # Run in Order
 # 1
 setwd(getwd())
