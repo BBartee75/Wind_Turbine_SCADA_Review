@@ -1,6 +1,6 @@
 ---
 title: "`r SiteName` SCADA Check"
-author: "<p>&copy; YOUR COMPANY NAME HERE</p>"
+author: "UL Solutions Asset Advisory Services"
 date: "`r format(Sys.Date(), '%B %d, %Y')`"
 output:
   html_document: default
@@ -344,9 +344,9 @@ for (i in 1:NROW(wtgNotReachRated)) {
          y = "RealPower", 
          title = paste0("WTG-", wt, " Power Curve DID NOT attain Rated Power/Capacity"), 
          color = "") +
-    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
+    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
                        breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
-    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
+    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100),
                        breaks = seq(0, max(csvPower$RealPower) + 250, by = 200)) +
     theme_half_open() +
     background_grid() +
@@ -473,9 +473,9 @@ for (i in 1:NROW(wtgs)) {
           y = "RealPower", 
           title = paste0("WTG-", wt, " Power Curve attained Rated Power/Capacity"), 
           color = "") +
-    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed), by = 1),
+    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
                        breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
-    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100, by = 1),
+    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100),
                        breaks = seq(0, max(csvPower$RealPower) + 200, by = 200)) +
     theme_half_open() +
     background_grid() 
