@@ -331,41 +331,56 @@ for (i in 1:NROW(wtgNotReachRated)) {
   wt <- wtgNotReachRated[i,]
   csvPower <- subset(csv.data, csv.data$WTG == wt & csv.data$RealPower > 0)  
   #Powercureve Plot
+  rated_power <- unique(csvPower$Rating)
   powercurve <- csvPower %>%
-    ggplot(aes(x = WindSpeed, y = RealPower)) +
-    geom_point(color = "#00689C", size = .5) +
-    geom_line(aes(x = WindSpeed, 
-                  y = rep(unique(Rating), length(WindSpeed)), 
-                  color = paste("Rated Power \n", unique(Rating), "(kW)")),
-              size = .65, 
-              linetype = "dotdash") +
-    scale_color_manual(values = "#CA0123") +
-    labs(x = "Windspeed", 
-         y = "RealPower", 
-         title = paste0("WTG-", wt, " Power Curve DID NOT attain Rated Power/Capacity"), 
-         color = "") +
-    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
-                       breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
-    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100),
-                       breaks = seq(0, max(csvPower$RealPower) + 250, by = 200)) +
-    theme_half_open() +
-    background_grid() +
-    guides(color = guide_legend(override.aes = list(size = 8)))
+      ggplot(aes(x = WindSpeed, y = RealPower)) +
+      geom_point(color = "#00689C", size = .5) +
+      geom_hline(yintercept = rated_power,
+                 color = "#CA0123",
+                 linewidth = .5,  # Made thicker so you can definitely see it
+                 linetype = "dashed") +
+      labs(x = "Windspeed", 
+           y = "RealPower", 
+           title = paste0("WTG-", wt, " Power Curve - Rated Power: ", rated_power, " kW")) +
+      scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
+                         breaks = seq(0, max(csvPower$WindSpeed), by = 1)) +
+      # Expand y-axis to ensure rated power line is visible
+      scale_y_continuous(limits = c(0, max(rated_power, max(csvPower$RealPower)) * 1.1),
+                         breaks = seq(0, max(rated_power, max(csvPower$RealPower)) * 1.2, by = 200)) +
+      theme_half_open() +
+      background_grid()
   
-    powercurve <- powercurve + 
-                  theme(axis.text.x = element_text(size = 6),
-                        axis.text.y = element_text(size = 6),
-                        axis.title.x = element_text(size = 8),
-                        axis.title.y = element_text(size = 8),
-                        legend.text = element_text(size = 8),
-                        plot.title = element_text(size = 10)  # Change the title size here
-                        )
-        
-
+  powercurve <- powercurve + 
+                theme(axis.text.x = element_text(size = 6),
+                      axis.text.y = element_text(size = 6),
+                      axis.title.x = element_text(size = 8),
+                      axis.title.y = element_text(size = 8),
+                      legend.text = element_text(size = 8),
+                      plot.title = element_text(size = 10)  # Change the title size here
+                      )
   #powercurve
   #-------------------------------------------------------------------------------------------------
   # get max realpowers per day
-  days <- unique(as_date(csvPower$TimeStamp10Min))
+   days <- unique(as_date(csvPower$TimeStamp10Min))
+  
+  if (length(days) > 30) {
+    # Roll up by month, keeping wind speed as a grouping variable
+    csvPower <- csvPower %>%
+        mutate(YearMonth = floor_date(TimeStamp10Min, "month"),
+               WindSpeedBin = round(WindSpeed, 1)) %>%  # Round to nearest 0.1 m/s
+        group_by(YearMonth, WindSpeedBin) %>%
+        summarise(
+            WindSpeed = round(mean(WindSpeed, na.rm = TRUE), digits = 2),
+            RealPower = round(mean(RealPower, na.rm = TRUE), digits = 2),
+            Rating = first(Rating),
+            .groups = "drop"
+        ) %>%
+        select(-WindSpeedBin) %>%
+        rename(TimeStamp10Min = YearMonth)
+    
+    message("Rolled up to monthly averages by wind speed bin")
+  }
+  
   mxpower <- csvPower
   mxpower$TimeStamp10Min <- as_date(mxpower$TimeStamp10Min)
   # Create a Power bar chart
@@ -459,27 +474,25 @@ for (i in 1:NROW(wtgs)) {
   if (nrow(csvPower) == 0) {
     next  # Skip to the next iteration if csvPower has 0 rows
   }
-  powercurve <-
-  csvPower %>%
-    ggplot(aes(x = WindSpeed, y = RealPower)) +
-    geom_point(color = "#00689C", size = .5) +
-    geom_line(aes(x = WindSpeed, 
-                  y = rep(unique(Rating), length(WindSpeed)), 
-                  color = paste("Rated Power \n", unique(Rating), "(kW)")),
-              size = .65, 
-              linetype = "dotdash") +
-    scale_color_manual(values = "#CA0123") +
-     labs(x = "Windspeed", 
-          y = "RealPower", 
-          title = paste0("WTG-", wt, " Power Curve attained Rated Power/Capacity"), 
-          color = "") +
-    scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
-                       breaks = seq(0, max(csvPower$WindSpeed), by = 1))+
-    scale_y_continuous(limits = c(min(csvPower$RealPower), max(csvPower$RealPower) + 100),
-                       breaks = seq(0, max(csvPower$RealPower) + 200, by = 200)) +
-    theme_half_open() +
-    background_grid() 
-
+  rated_power <- unique(csvPower$Rating)
+  powercurve <- csvPower %>%
+      ggplot(aes(x = WindSpeed, y = RealPower)) +
+      geom_point(color = "#00689C", size = .5) +
+      geom_hline(yintercept = rated_power,
+                 color = "#CA0123",
+                 linewidth = .5,  # Made thicker so you can definitely see it
+                 linetype = "dashed") +
+      labs(x = "Windspeed", 
+           y = "RealPower", 
+           title = paste0("WTG-", wt, " Power Curve - Rated Power: ", rated_power, " kW")) +
+      scale_x_continuous(limits = c(min(csvPower$WindSpeed), max(csvPower$WindSpeed)),
+                         breaks = seq(0, max(csvPower$WindSpeed), by = 1)) +
+      # Expand y-axis to ensure rated power line is visible
+      scale_y_continuous(limits = c(0, max(rated_power, max(csvPower$RealPower)) * 1.1),
+                         breaks = seq(0, max(rated_power, max(csvPower$RealPower)) * 1.2, by = 200)) +
+      theme_half_open() +
+      background_grid()
+  
   powercurve <- powercurve + 
                 theme(axis.text.x = element_text(size = 6),
                       axis.text.y = element_text(size = 6),
@@ -487,12 +500,30 @@ for (i in 1:NROW(wtgs)) {
                       axis.title.y = element_text(size = 8),
                       legend.text = element_text(size = 8),
                       plot.title = element_text(size = 10)  # Change the title size here
-                      ) 
-  
+                      )
   #powercurve
   #-------------------------------------------------------------------------------------------------
   # get max realpowers per day
-  days <- unique(as_date(csvPower$TimeStamp10Min))
+   days <- unique(as_date(csvPower$TimeStamp10Min))
+  
+  if (length(days) > 30) {
+    # Roll up by month, keeping wind speed as a grouping variable
+    csvPower <- csvPower %>%
+        mutate(YearMonth = floor_date(TimeStamp10Min, "month"),
+               WindSpeedBin = round(WindSpeed, 1)) %>%  # Round to nearest 0.1 m/s
+        group_by(YearMonth, WindSpeedBin) %>%
+        summarise(
+            WindSpeed = round(mean(WindSpeed, na.rm = TRUE), digits = 2),
+            RealPower = round(mean(RealPower, na.rm = TRUE), digits = 2),
+            Rating = first(Rating),
+            .groups = "drop"
+        ) %>%
+        select(-WindSpeedBin) %>%
+        rename(TimeStamp10Min = YearMonth)
+    
+    message("Rolled up to monthly averages by wind speed bin")
+  }
+  
   mxpower <- csvPower
   mxpower$TimeStamp10Min <- as_date(mxpower$TimeStamp10Min)
   # Create a Power bar chart
